@@ -1,7 +1,6 @@
 import Image
 import numpy
 import logging
-import ipdb
 import copy
 import math
 import json
@@ -19,6 +18,7 @@ from click import *
 
 import traceback
 import shutil
+import sys
 
 from ConfigParser import RawConfigParser
 
@@ -246,7 +246,7 @@ class bioImage:
 
         return
     
-    def components(self, outdir=None):
+    def components(self, outdir=None, maxROIs=999):
         
         if not outdir is None:
             outfn = outdir + "/out.png"
@@ -281,6 +281,8 @@ class bioImage:
                 filtered_measurements.append(measurements[i])
         measurements = filtered_measurements
         
+        measurements = measurements[0:maxROIs]
+        
         measurements_sorted = sorted(measurements, key=lambda m: m.pos[1])
 
         fig = plt.figure()
@@ -310,7 +312,7 @@ def showArr(arr):
     plt.show()
     return
 
-def processLuminescent(dir, outDir, subtractBias=True, nSigma = 0.3, nDilations=2):
+def processLuminescent(dir, outDir, subtractBias=True, nSigma = 0.3, nDilations=2, maxROIs=3):
     logger = logging.getLogger("processLuminescent({0})".format(dir))
 
     fnLumi = dir + "/luminescent.TIF"
@@ -346,7 +348,7 @@ def processLuminescent(dir, outDir, subtractBias=True, nSigma = 0.3, nDilations=
     lumi.dilate(it=ci.lumi.binning*nDilations)
 
 
-    lumi.components(outDir)
+    lumi.components(outDir, maxROIs)
 
     if not outDir is None:
         lumi.saveToFile(outDir + "/out.txt")
@@ -357,6 +359,7 @@ def convPath(s):
     return s.replace("\\", "/")
     
 if __name__=="__main__":
+    print "bioImaging loaded"
     
     configFileName = "settings.txt"
     config = RawConfigParser()
@@ -413,6 +416,8 @@ if __name__=="__main__":
 
 
     for fn in files[0:maxFiles]:
+        sys.stdout.write(".")
+        sys.stdout.flush()
         d = fn[:fn.rindex("/")]
         i += 1        
         logger.info("Processing directory: {0}".format(d))
@@ -427,7 +432,7 @@ if __name__=="__main__":
         
             if not ofdir is None:
                 os.mkdir(ofdir)
-            p = processLuminescent(d, ofdir, subtractBias, nSigma, nDilations)
+            p = processLuminescent(d, ofdir, subtractBias, nSigma, nDilations, maxROIs)
             if excelOut:
                 wb.get_sheet(0).write(i, 1, imageName)
         except IOError as e:
@@ -457,6 +462,7 @@ if __name__=="__main__":
 
     if excelOut:
         wb.save(excelOutFileName)
+    print "Done analyzing %d files" % i
 
 
 
