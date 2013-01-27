@@ -1,6 +1,7 @@
 import re
 import ipdb
 import glob
+import traceback
 
 def getBlock(blocks, first):
     f = filter(lambda x: x.startswith(first), blocks)
@@ -39,9 +40,12 @@ class ReadBiasBlock:
 class Ddict(dict):
     def __init__(self, default=None):
         self.default = default
+        self.final = False
 
     def __getitem__(self, key):
         if not self.has_key(key):
+            if self.final:
+                raise KeyError("Key '{0} not found".format(key))
             self[key] = self.default()
         return dict.__getitem__(self, key)
 
@@ -87,41 +91,78 @@ class CameraBlock:
             for c in ccdCoefs:
                 c = c.split()
                 coef = float(c[-1])
-                fnumber = c[-2][1:-1]
+                fnumber = int(c[-2][1:-1])
                 fov = c[-3][:-1]
                 self.ccdCoefs[fov][fnumber] = coef
+            self.ccdCoefs.final = True
         except Exception as e:
-            raise Exception("Could not get CCD coefs filter: \n{0}\n".format(e.message))
+            raise Exception("Could not get CCD coefs: \n{0}\n".format(e.message))
 
     def __repr__(self):
         return str(self.__dict__)
 
+class UserInput:
+    def __init__(self, block):
+        try:
+            self.comment = str(getMatched("Comment1:\s.+", block)[1])
+        except Exception as e:
+            raise Exception("Could not get comment: \n{0}\nin block: \n{1}".format(e.message, block))
+        try:
+            self.experiment = str(getMatched("Experiment:\s.+", block)[1])
+        except Exception as e:
+            raise Exception("Could not get experiment: \n{0}\nin block: \n{1}".format(e.message, block))
+        try:
+            self.cellLine = str(getMatched("Cell Line:\s.+", block)[1])
+        except Exception as e:
+            raise Exception("Could not get cell line: \n{0}\nin block: \n{1}".format(e.message, block))
+        try:
+            self.lucInjectionTime = float(getMatched("Luc Injection Time:\s.+", block)[1])
+        except Exception as e:
+            raise Exception("Could not get luc injection time: \n{0}\nin block: \n{1}".format(e.message, block))
 
+    def __repr__(self):
+        return str(self.__dict__)
+class ClickInfo:
+    def __init__(self, readbias, lumi, cam):
+        self.readbias = readbias
+        self.lumi = lumi
+        self.cam = cam
 
-#Field of View:\t12.5
-#Emission filter:\tOpen
-#Excitation filter:\tBlock
-#Coef C-ccd at FOV 12.5, f4:\t2.213E+07
+def readBlocks(fn):
+    f = open(fn)
+    text = f.read()
+    f.close()
+
+    blocks = text.split("***")
+    #Remove leading/trailing whitespace from all blocks    
+    blocks = map(lambda x: x.strip(), blocks)
+    return blocks
+
+def readClickInfo(dir):
+    blocks = readBlocks(dir+"/ClickInfo.txt")
+
+    rbBlock = ReadBiasBlock(getBlock(blocks, "readbiasonly"))
+    lumiBlock = LuminescentBlock(getBlock(blocks, "luminescent"))
+    camBlock = CameraBlock(getBlock(blocks, "Camera System Info"))
+    return ClickInfo(rbBlock, lumiBlock, camBlock)
+
+def readAnalyzedClickInfo(dir):
+    blocks = readBlocks(dir+"/AnalyzedClickInfo.txt")
+    #ipdb.set_trace()
+    userInput = UserInput(getBlock(blocks, "User Label Name Set:	Living Image Universal"))
+    return userInput
+
 if __name__=="__main__":
     files = glob.glob("/Users/joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/PP*/ClickInfo.txt")
    
-    rbBlocks = []
-    lumiBlocks = []
-    cameraBlocks = []
+    cis = []
     for fn in files:
-        f = open(fn)
-        text = f.read()
-        f.close()
-
-        blocks1 = text.split("***")
-        blocks1 = map(lambda x: x.strip(), blocks1)
-
-        rbBlock = ReadBiasBlock(getBlock(blocks1, "readbiasonly"))
-        lumiBlock = LuminescentBlock(getBlock(blocks1, "luminescent"))
-        camBlock = CameraBlock(getBlock(blocks1, "Camera System Info"))
-
-        rbBlocks.append(rbBlock)
-        lumiBlocks.append(lumiBlock)
-        cameraBlocks.append(camBlock)
+        dir = fn[:fn.rindex("/")]
+        ci = readClickInfo(dir)
+        try:
+            an = readAnalyzedClickInfo(dir)
+        except Exception as e:
+            print "Could not get AnalyzedClickInfo for {1}: {0}".format(e.message, dir)
+        cis.append(ci)
 
 
