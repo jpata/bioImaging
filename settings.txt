@@ -1,0 +1,13 @@
+[Input]
+inputFilePattern = /Users/joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/*/*/ClickInfo.txt
+maximumFiles = 30
+
+[Output]
+writeExcelFile = yes
+excelFileName = lumi.xls
+
+[Parameters]
+maxROIs = 3
+subtractDarkChargeBias = yes
+NumberOfSigmaAboveMean = 0.3
+NumberOfDilations = 2

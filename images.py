@@ -18,11 +18,9 @@ import glob
 from click import *
 
 import traceback
+import shutil
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
-logger.info("Imported imaging library")
+from ConfigParser import RawConfigParser
 
 class Encoder(json.JSONEncoder):
     def default(self, obj):
@@ -312,7 +310,7 @@ def showArr(arr):
     plt.show()
     return
 
-def processLuminescent(dir, outDir, subtractBias=True):
+def processLuminescent(dir, outDir, subtractBias=True, nSigma = 0.3, nDilations=2):
     logger = logging.getLogger("processLuminescent({0})".format(dir))
 
     fnLumi = dir + "/luminescent.TIF"
@@ -344,8 +342,8 @@ def processLuminescent(dir, outDir, subtractBias=True):
     c = Calibration(ccdCoef)
     c.totalC = c.totalC / (ci.lumi.binning**2)
     lumi.calibrate(c)
-    lumi.binarize(nsigma=0.3)
-    lumi.dilate(it=ci.lumi.binning*2)
+    lumi.binarize(nSigma)
+    lumi.dilate(it=ci.lumi.binning*nDilations)
 
 
     lumi.components(outDir)
@@ -355,17 +353,38 @@ def processLuminescent(dir, outDir, subtractBias=True):
 
     return lumi
 
-if __name__=="__main__":
-    logger = logging.getLogger("main()")
-
-    files = glob.glob("/Users/joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/*/ClickInfo.txt")
-    files += glob.glob("/Users/joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/*/*/ClickInfo.txt")
+def convPath(s):
+    return s.replace("\\", "/")
     
-    #files = glob.glob("testIn/*/ClickInfo.txt")
+if __name__=="__main__":
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("main()")
+    logger.info("bioImaging program started.")
+    
+    configFileName = "settings.txt"
+    logger.info("Reading configuration file {0}.".format(configFileName))
+    config = RawConfigParser()
+    config.read(configFileName)
+    
+    inFiles = config.get("Input", "inputFilePattern")
+    maxFiles = config.getint("Input", "maximumFiles")
+    
+    excelOut = True#config.getboolean("Output", "writeExcelFile")
+    excelOutFileName = config.get("Output", "excelFileName")
+    
+    tempWorkDir = "temporary"
+    logger.info("Removing temporary dir {0}".format(tempWorkDir))
+    shutil.rmtree(tempWorkDir, True)
+    os.mkdir(tempWorkDir)
 
-    maxROIs = 3
-    subtractBias = True
-    excelOut = True
+    files = glob.glob(inFiles)
+    files = map(convPath, files)
+
+    maxROIs = config.getint("Parameters", "maxROIs")
+    subtractBias = config.getboolean("Parameters", "subtractDarkChargeBias")
+    
+    nSigma = config.getfloat("Parameters", "NumberOfSigmaAboveMean")
+    nDilations = config.getint("Parameters", "NumberOfDilations")
 
     if excelOut:
         wb = xlwt.Workbook()
@@ -380,11 +399,11 @@ if __name__=="__main__":
             j += 1
 
 
-    for fn in files:
+    for fn in files[0:maxFiles]:
         d = fn[:fn.rindex("/")]
         i += 1        
         logger.info("Processing directory: {0}".format(d))
-        ofdir = "testOut/" + str(i)
+        ofdir = tempWorkDir + "/" + str(i)
         
         if excelOut:
             wb.get_sheet(0).write(i, 0, fn)
@@ -395,24 +414,21 @@ if __name__=="__main__":
         
             if not ofdir is None:
                 os.mkdir(ofdir)
-            p = processLuminescent(d, ofdir, subtractBias)
+            p = processLuminescent(d, ofdir, subtractBias, nSigma, nDilations)
             if excelOut:
                 wb.get_sheet(0).write(i, 1, imageName)
-        except Exception as e:
+        except IOError as e:
             logger.error("Could not process {0}: {1}".format(d, str(e)))
             #os.rmdir(ofdir)
             
-            if hasattr(e, "errno"):
-                errcode = e.errno
-            else:
-                errcode = str(e)
             if excelOut:
-                wb.get_sheet(0).write(i, 1, "FAILED: {0}".format(errcode))
+                wb.get_sheet(0).write(i, 1, "FAILED: {0}".format(str(e)))
             continue
         j = dataBeginCol
 
-        wb.get_sheet(0).write(i, 2, p.stats.mean)
-        wb.get_sheet(0).write(i, 3, p.stats.total)
+        if excelOut:
+            wb.get_sheet(0).write(i, 2, p.stats.mean)
+            wb.get_sheet(0).write(i, 3, p.stats.total)
 
         for m in p.measurements[0:maxROIs]:
             if excelOut:
@@ -427,7 +443,7 @@ if __name__=="__main__":
             os.remove("temp.bmp")
 
     if excelOut:
-        wb.save("test.xls")
+        wb.save(excelOutFileName)
 
 
 
