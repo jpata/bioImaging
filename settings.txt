@@ -11,3 +11,6 @@ maxROIs = 3
 subtractDarkChargeBias = yes
 NumberOfSigmaAboveMean = 0.3
 NumberOfDilations = 2
+
+[General]
+logLevel=WARNING

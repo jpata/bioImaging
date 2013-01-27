@@ -357,14 +357,27 @@ def convPath(s):
     return s.replace("\\", "/")
     
 if __name__=="__main__":
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("main()")
-    logger.info("bioImaging program started.")
     
     configFileName = "settings.txt"
-    logger.info("Reading configuration file {0}.".format(configFileName))
     config = RawConfigParser()
     config.read(configFileName)
+    
+    logLevel = config.get("General", "logLevel")
+    if logLevel=="INFO":
+        level=logging.INFO
+    elif logLevel=="WARNING":
+        level=logging.WARNING
+    elif logLevel=="DEBUG":
+        level=logging.DEBUG
+    elif logLevel=="ERROR":
+        level=logging.ERROR
+    else:
+        level=logging.INFO
+
+    logging.basicConfig(level=level, filename="log.txt", filemode="w")
+
+    logger = logging.getLogger("main()")
+    logger.info("bioImaging program started.")
     
     inFiles = config.get("Input", "inputFilePattern")
     maxFiles = config.getint("Input", "maximumFiles")

@@ -9,7 +9,6 @@
 /* Begin PBXFileReference section */
 		A724985816A7716900E687C5 /* images.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; path = images.py; sourceTree = "<group>"; };
 		A741F67316AA191100D50F5C /* click.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; path = click.py; sourceTree = "<group>"; };
-		A757BCFB16B56B9000BB90EB /* setup.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; path = setup.py; sourceTree = "<group>"; };
 		A757BCFD16B5A47700BB90EB /* settings.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = settings.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -20,7 +19,6 @@
 				A741F67316AA191100D50F5C /* click.py */,
 				A724985816A7716900E687C5 /* images.py */,
 				A757BCFD16B5A47700BB90EB /* settings.txt */,
-				A757BCFB16B56B9000BB90EB /* setup.py */,
 			);
 			sourceTree = "<group>";
 		};
