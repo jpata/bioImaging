@@ -9,6 +9,7 @@
 /* Begin PBXFileReference section */
 		A724985816A7716900E687C5 /* images.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; path = images.py; sourceTree = "<group>"; };
 		A741F67316AA191100D50F5C /* click.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; path = click.py; sourceTree = "<group>"; };
+		A757BCFB16B56B9000BB90EB /* setup.py */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.python; path = setup.py; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -17,6 +18,7 @@
 			children = (
 				A741F67316AA191100D50F5C /* click.py */,
 				A724985816A7716900E687C5 /* images.py */,
+				A757BCFB16B56B9000BB90EB /* setup.py */,
 			);
 			sourceTree = "<group>";
 		};
