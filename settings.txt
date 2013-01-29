@@ -1,9 +1,9 @@
 [Input]
 inputFilePattern = /Users/joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/*/*/ClickInfo.txt
-maximumFiles = 30
+maximumFiles = 100
 
 [Output]
-writeExcelFile = yes
+writeExcelFile = no
 excelFileName = lumi.xls
 
 [Parameters]

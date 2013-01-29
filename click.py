@@ -122,10 +122,11 @@ class UserInput:
     def __repr__(self):
         return str(self.__dict__)
 class ClickInfo:
-    def __init__(self, readbias, lumi, cam):
+    def __init__(self, readbias, lumi, cam, dir):
         self.readbias = readbias
         self.lumi = lumi
         self.cam = cam
+        self.dir = dir
 
 def readBlocks(fn):
     f = open(fn)
@@ -143,7 +144,7 @@ def readClickInfo(dir):
     rbBlock = ReadBiasBlock(getBlock(blocks, "readbiasonly"))
     lumiBlock = LuminescentBlock(getBlock(blocks, "luminescent"))
     camBlock = CameraBlock(getBlock(blocks, "Camera System Info"))
-    return ClickInfo(rbBlock, lumiBlock, camBlock)
+    return ClickInfo(rbBlock, lumiBlock, camBlock, dir)
 
 def readAnalyzedClickInfo(dir):
     blocks = readBlocks(dir+"/AnalyzedClickInfo.txt")

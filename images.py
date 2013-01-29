@@ -1,4 +1,5 @@
-import Image
+import sys
+from PIL import Image
 import numpy
 import logging
 import copy
@@ -18,7 +19,6 @@ from click import *
 
 import traceback
 import shutil
-import sys
 
 from ConfigParser import RawConfigParser
 
@@ -301,7 +301,9 @@ class bioImage:
         if not outfn is None:
             fig.savefig(outfn)
         
+        #self.analyzedFigure = fig
         #plt.show()
+        plt.close()
     
         self.measurements = measurements
         return measurements
@@ -464,10 +466,54 @@ if __name__=="__main__":
         wb.save(excelOutFileName)
     print "Done analyzing %d files" % i
 
+class Luminescent:
+    def __init__(self, ci):
+        self.ci = ci
+        self.readBiasImg = None
+        self.lumiImg = None
+
+    def load(self):
+        try:
+            self.lumiImg = bioImage(self.ci.dir + "/" + self.ci.lumi.image)
+            self.readBiasImg = bioImage(self.ci.dir + "/" + self.ci.readbias.image)
+        except IOError as e:
+            print e.message
+        return
+
+    def analyze(self):
+        nSigma = 0.3
+        nDilations = 2
+        outDir = None
+        maxROIs = 3
+        
+        if self.lumiImg != None and self.readBiasImg != None:
+            self.lumiImg.subtractBias(self.readBiasImg, useMean=True)
+            self.lumiImg.setExposure(self.ci.lumi.exposure)
+            self.lumiImg.rebin(self.ci.lumi.binning)
+            
+            ccdCoef = self.ci.cam.ccdCoefs[self.ci.lumi.FOV][self.ci.lumi.fNumber]
+            c = Calibration(ccdCoef)
+            c.totalC = c.totalC / (self.ci.lumi.binning**2)
+            self.lumiImg.calibrate(c)
+            self.lumiImg.binarize(nSigma)
+            self.lumiImg.dilate(it=self.ci.lumi.binning*nDilations)
+            self.lumiImg.components(outDir, maxROIs)
 
 
+class LuminescentModel:
+    def __init__(self):
+        self.lumis = []
+        
+    def addLumi(self, lumi):
+        self.lumis.append(lumi)
+        
+    def loadAll(self):
+        for i in range(len(self.lumis)):
+            self.lumis[i].load()
 
-
+    def analyzeAll(self):
+        for i in range(len(self.lumis)):
+            self.lumis[i].analyze()
 
 
 
