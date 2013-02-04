@@ -78,7 +78,7 @@ class LuminescentBlock:
             self.excitationFilter = str((getMatched("Excitation filter:\t\w+", block))[1])
         except Exception as e:
             raise Exception("Could not get excitation filter: \n{0}\nin block: \n{1}".format(e.message, block))
-    
+
     def __repr__(self):
         return str(self.__dict__)
 
@@ -134,7 +134,7 @@ def readBlocks(fn):
     f.close()
 
     blocks = text.split("***")
-    #Remove leading/trailing whitespace from all blocks    
+    #Remove leading/trailing whitespace from all blocks
     blocks = map(lambda x: x.strip(), blocks)
     return blocks
 
@@ -148,13 +148,12 @@ def readClickInfo(dir):
 
 def readAnalyzedClickInfo(dir):
     blocks = readBlocks(dir+"/AnalyzedClickInfo.txt")
-    #ipdb.set_trace()
     userInput = UserInput(getBlock(blocks, "User Label Name Set:	Living Image Universal"))
     return userInput
 
 if __name__=="__main__":
     files = glob.glob("/Users/joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/PP*/ClickInfo.txt")
-   
+
     cis = []
     for fn in files:
         dir = fn[:fn.rindex("/")]
