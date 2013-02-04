@@ -20,13 +20,18 @@ from click import *
 import traceback
 import shutil
 
+import gc
+
 from ConfigParser import RawConfigParser
+import pdb
 
 class Encoder(json.JSONEncoder):
     def default(self, obj):
         if hasattr(obj, "encode"):
             return obj.encode()
         return json.JSONEncoder.default(self, obj)
+
+
 
 class ImageStats:
 
@@ -36,9 +41,9 @@ class ImageStats:
             "stddev": numpy.asscalar(self.stddev),
             "minVal": numpy.asscalar(self.minVal),
             "maxVal": numpy.asscalar(self.maxVal),
-            "total": numpy.asscalar(self.total),        
+            "total": numpy.asscalar(self.total),
         }
-    
+
     def __init__(self, src):
         self.mean = numpy.mean(src)
         self.stddev = numpy.std(src)
@@ -83,7 +88,7 @@ class Measurement:
         return self.__dict__
 
     def writeToSheet(self, sheet, r, c):
-    
+
         j = 0
         for o in Measurement.outFormat:
             sheet.write(r, c + j, getattr(self, o))
@@ -94,7 +99,7 @@ class bioImage:
 
     def saveToFile(self, fn):
         logger = logging.getLogger(self.logger().name + ":saveToFile()")
-        
+
         logger.info("Saving data to file {0}".format(fn))
         s = json.dumps(self, cls=Encoder, sort_keys=True, indent=4)
         logger.debug("Encoded to JSON as {0}".format(s))
@@ -102,7 +107,7 @@ class bioImage:
         f.write(s)
         f.close()
         return
-    
+
     def saveImage(self, fn):
         logger = logging.getLogger(self.logger().name + ":saveImage()")
         logger.info("Saving image to file {0}".format(fn))
@@ -120,27 +125,28 @@ class bioImage:
         if hasattr(self, "biasMean"):
             out["biasMean"] = self.biasMean
         if hasattr(self, "measurements"):
-            out["measurements"] = self.measurements        
-        
+            out["measurements"] = self.measurements
+
         return out
-    
+
     def calibrate(self, calibration):
         logger = logging.getLogger(self.logger().name + ":calibrate()")
         logger.info("Calibrating image with calibration {0}".format(calibration))
-                
+
         newArr = self.arr*calibration.ccdCountsToRadiance
         newStats = ImageStats(newArr)
         newStats.printStats(logger)
         self.radianceCalibrated = True
-        
+
         self.arr = newArr
+        del newArr
         self.stats = newStats
         self.calibration = calibration
         self.stats.total *= calibration.totalC
-        
+
     def logger(self):
         return logging.getLogger("bioImage:{0}".format(self.name))
-    
+
     def __init__(self, fileName):
         self.name = fileName[fileName.rindex("/")+1:]
         img = Image.open(fileName)
@@ -158,7 +164,7 @@ class bioImage:
 
     def printStats(self):
         self.stats.printStats(self.logger())
-    
+
     def subtractBias(self, biasimg, useMean=False, doPad=False):
         logger = logging.getLogger(self.logger().name + ":subtractBias()")
         if self.arr.shape != biasimg.arr.shape:
@@ -167,7 +173,7 @@ class bioImage:
         if self.biasSubtracted:
             logger.error("Bias has already been subtracted from this image, aborting.")
             return
-        
+
         if useMean:
             logger.debug("Using mean bias")
             newArr = self.arr - biasimg.stats.mean
@@ -175,10 +181,10 @@ class bioImage:
             logger.debug("Using full bias image")
             newArr = self.arr - biasimg.arr
         self.biasMean = biasimg.stats.mean
-    
+
         #pdb.set_trace()
         oldStats = self.stats
-                
+
         self.arr = newArr
         self.stats = ImageStats(self.arr)
 
@@ -186,7 +192,7 @@ class bioImage:
         logger.info("Done subtracting bias, the old and new stats are as follows:")
         oldStats.printStats(self.logger())
         self.stats.printStats(self.logger())
-    
+
         if doPad and (self.stats.minVal < 0):
             logger.warning("Image contains negative values after bias subtraction: min(lumi)={0}, mean(bias)={1}, min(lumi-bias)={2}".format(oldStats.minVal, biasimg.stats.mean, self.stats.minVal))
             padding = abs(numpy.min(self.arr)) + 1
@@ -208,15 +214,16 @@ class bioImage:
         newArr = self.arr/math.pow(binning,2)
         #newArr = self.arr
         newArr = numpy.kron(newArr, numpy.ones((binning, binning)))
-        
+
         #Require that the total be the same within numerical precision
         #assert(abs(numpy.sum(self.arr)-numpy.sum(newArr))<0.1)
 
         self.arr = newArr
+        del newArr
         self.stats = ImageStats(self.arr)
         self.binning = binning
         return
-    
+
     def setExposure(self, expTime):
         self.arr = (1.0/float(expTime))*self.arr
         self.exposureTime = expTime
@@ -227,11 +234,11 @@ class bioImage:
         level = self.stats.mean + nsigma*self.stats.stddev
         self.binArr = numpy.greater(self.arr, level)
         return
-    
+
     def dilate(self, it=3):
         self.binArr = scipy.ndimage.binary_dilation(self.binArr, iterations=it)
         return
-    
+
     def fixOverflow(self):
         logger = logging.getLogger(self.logger().name + ":fixOverflow()")
 
@@ -245,13 +252,9 @@ class bioImage:
             logger.info("No overflow")
 
         return
-    
-    def components(self, outdir=None, maxROIs=999):
-        
-        if not outdir is None:
-            outfn = outdir + "/out.png"
-        else:
-            outfn = outdir
+
+    def components(self, outfn=None, maxROIs=999):
+
         #mask = scipy.ndimage.percentile_filter(self.arr, 80, size=(8,8))
         mask = self.binArr
         labels, n = scipy.ndimage.label(mask)
@@ -261,34 +264,34 @@ class bioImage:
         maximums = scipy.ndimage.maximum(self.arr, labels, range(1, n + 1))
         stddevs = scipy.ndimage.standard_deviation(self.arr, labels, range(1, n + 1))
         positions = scipy.ndimage.center_of_mass(self.arr, labels, range(1, n + 1))
-        
+
         measurements = []
         for i in range(len(totals)):
             m = Measurement(totals[i], sizes[i], means[i], maximums[i], stddevs[i], positions[i])
             measurements.append(m)
-        
+
         #Remove small components from mask
         large = map(lambda x: x.area>self.binning*self.binning*100, measurements)
         largeIndex = zip(range(1,len(large)+1), large)
         for (n, isLarge) in largeIndex:
             if not isLarge:
                 self.binArr[labels==n] = False
-        
+
         #Remove small components from measurements
         filtered_measurements = []
         for i in range(len(large)):
             if large[i]:
                 filtered_measurements.append(measurements[i])
         measurements = filtered_measurements
-        
+
         measurements = measurements[0:maxROIs]
-        
+
         measurements_sorted = sorted(measurements, key=lambda m: m.pos[1])
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
         #pdb.set_trace()
-        
+
         plt.imshow(numpy.log(self.arr), cmap=matplotlib.cm.gnuplot2_r)
         plt.contour(self.binArr, colors="black", alpha=0.9)
         i = 1
@@ -300,14 +303,20 @@ class bioImage:
             i += 1
         if not outfn is None:
             fig.savefig(outfn)
-        
+
         #self.analyzedFigure = fig
         #plt.show()
         plt.close()
-    
+        fig.clf()
+        del ax
+        del fig
+        gc.collect()
+
+        #del fig
+
         self.measurements = measurements
         return measurements
-        
+
 
 def showArr(arr):
     plt.imshow(arr)
@@ -320,11 +329,11 @@ def processLuminescent(dir, outDir, subtractBias=True, nSigma = 0.3, nDilations=
     fnLumi = dir + "/luminescent.TIF"
     fnBias = dir + "/readbiasonly.TIF"
     #ciFile = dir + "/ClickInfo.txt"
-    
+
     ci = readClickInfo(dir)
     lumi = bioImage(fnLumi)
     #lumi.fixOverflow()
-    
+
     if subtractBias:
         try:
             bias = bioImage(fnBias)
@@ -340,7 +349,7 @@ def processLuminescent(dir, outDir, subtractBias=True, nSigma = 0.3, nDilations=
 
     lumi.setExposure(ci.lumi.exposure)
     lumi.rebin(ci.lumi.binning)
-    
+
     ccdCoef = ci.cam.ccdCoefs[ci.lumi.FOV][ci.lumi.fNumber]
     #logging.info("using ccdCoef={0}".format(ccdCoef))
     c = Calibration(ccdCoef)
@@ -359,14 +368,14 @@ def processLuminescent(dir, outDir, subtractBias=True, nSigma = 0.3, nDilations=
 
 def convPath(s):
     return s.replace("\\", "/")
-    
-if __name__=="__main__":
+
+def main():
     print "bioImaging loaded"
-    
+
     configFileName = "settings.txt"
     config = RawConfigParser()
     config.read(configFileName)
-    
+
     logLevel = config.get("General", "logLevel")
     if logLevel=="INFO":
         level=logging.INFO
@@ -383,13 +392,13 @@ if __name__=="__main__":
 
     logger = logging.getLogger("main()")
     logger.info("bioImaging program started.")
-    
+
     inFiles = config.get("Input", "inputFilePattern")
     maxFiles = config.getint("Input", "maximumFiles")
-    
+
     excelOut = True#config.getboolean("Output", "writeExcelFile")
     excelOutFileName = config.get("Output", "excelFileName")
-    
+
     tempWorkDir = "temporary"
     logger.info("Removing temporary dir {0}".format(tempWorkDir))
     shutil.rmtree(tempWorkDir, True)
@@ -400,14 +409,14 @@ if __name__=="__main__":
 
     maxROIs = config.getint("Parameters", "maxROIs")
     subtractBias = config.getboolean("Parameters", "subtractDarkChargeBias")
-    
+
     nSigma = config.getfloat("Parameters", "NumberOfSigmaAboveMean")
     nDilations = config.getint("Parameters", "NumberOfDilations")
 
     if excelOut:
         wb = xlwt.Workbook()
         sheet = wb.add_sheet("data")
-    
+
     dataBeginCol = 4
     i = 0
     j = 0
@@ -417,21 +426,22 @@ if __name__=="__main__":
             j += 1
 
 
+
     for fn in files[0:maxFiles]:
         sys.stdout.write(".")
         sys.stdout.flush()
         d = fn[:fn.rindex("/")]
-        i += 1        
+        i += 1
         logger.info("Processing directory: {0}".format(d))
         ofdir = tempWorkDir + "/" + str(i)
-        
+
         if excelOut:
             wb.get_sheet(0).write(i, 0, fn)
-        
+
         imageName = "Image%d" % i
-        
+
         try:
-        
+
             if not ofdir is None:
                 os.mkdir(ofdir)
             p = processLuminescent(d, ofdir, subtractBias, nSigma, nDilations, maxROIs)
@@ -440,7 +450,7 @@ if __name__=="__main__":
         except IOError as e:
             logger.error("Could not process {0}: {1}".format(d, str(e)))
             #os.rmdir(ofdir)
-            
+
             if excelOut:
                 wb.get_sheet(0).write(i, 1, "FAILED: {0}".format(str(e)))
             continue
@@ -462,74 +472,95 @@ if __name__=="__main__":
             sheet.insert_bitmap("temp.bmp", 5, 1)
             os.remove("temp.bmp")
 
-    if excelOut:
-        wb.save(excelOutFileName)
+        if excelOut:
+            wb.save(excelOutFileName)
     print "Done analyzing %d files" % i
 
 class Luminescent:
-    def __init__(self, ci):
-        self.ci = ci
+    def __init__(self, d, outDir):
+        self.ci = readClickInfo(d)
+        self.name = d[d.rindex("/")+1:]
         self.readBiasImg = None
         self.lumiImg = None
+        self.outDir = outDir
+        self.processedImageFileName = self.outDir + "/" + self.name + "_processed.png"
+
+        self.measurements = None
+        self.imgStats = None
 
     def load(self):
-        try:
-            self.lumiImg = bioImage(self.ci.dir + "/" + self.ci.lumi.image)
-            self.readBiasImg = bioImage(self.ci.dir + "/" + self.ci.readbias.image)
-        except IOError as e:
-            print e.message
-        return
+        self.lumiImg = bioImage(self.ci.dir + "/" + self.ci.lumi.image)
+        self.readBiasImg = bioImage(self.ci.dir + "/" + self.ci.readbias.image)
 
     def analyze(self):
         nSigma = 0.3
         nDilations = 2
-        outDir = None
         maxROIs = 3
-        
-        if self.lumiImg != None and self.readBiasImg != None:
-            self.lumiImg.subtractBias(self.readBiasImg, useMean=True)
-            self.lumiImg.setExposure(self.ci.lumi.exposure)
-            self.lumiImg.rebin(self.ci.lumi.binning)
-            
-            ccdCoef = self.ci.cam.ccdCoefs[self.ci.lumi.FOV][self.ci.lumi.fNumber]
-            c = Calibration(ccdCoef)
-            c.totalC = c.totalC / (self.ci.lumi.binning**2)
-            self.lumiImg.calibrate(c)
-            self.lumiImg.binarize(nSigma)
-            self.lumiImg.dilate(it=self.ci.lumi.binning*nDilations)
-            self.lumiImg.components(outDir, maxROIs)
 
+        self.lumiImg.subtractBias(self.readBiasImg, useMean=True)
+        self.lumiImg.setExposure(self.ci.lumi.exposure)
+        self.lumiImg.rebin(self.ci.lumi.binning)
+
+        ccdCoef = self.ci.cam.ccdCoefs[self.ci.lumi.FOV][self.ci.lumi.fNumber]
+        c = Calibration(ccdCoef)
+        c.totalC = c.totalC / (self.ci.lumi.binning**2)
+        self.lumiImg.calibrate(c)
+        self.lumiImg.binarize(nSigma)
+        self.lumiImg.dilate(it=self.ci.lumi.binning*nDilations)
+        self.lumiImg.components(self.processedImageFileName, maxROIs)
+
+        self.measurements = self.lumiImg.measurements
+        self.imgStats = self.lumiImg.stats
+
+    def clean(self):
+        del self.lumiImg
+        del self.readBiasImg
+        gc.collect()
+        return
+
+    def all(self):
+        try:
+            self.load()
+            self.analyze()
+            self.clean()
+            self.errorMessage = None
+        except IOError as e:
+            self.errorMessage = e.message
+        return
 
 class LuminescentModel:
-    def __init__(self):
-        self.lumis = []
-        
-    def addLumi(self, lumi):
-        self.lumis.append(lumi)
-        
-    def loadAll(self):
-        for i in range(len(self.lumis)):
-            self.lumis[i].load()
+    def __init__(self, dirs, outDir):
+        self.outDir = outDir
+        self.lumis = [Luminescent(d, self.outDir) for d in dirs]
 
-    def analyzeAll(self):
-        for i in range(len(self.lumis)):
-            self.lumis[i].analyze()
+    def process(self):
+        for l in self.lumis:
+            l.all()
 
+class HTMLOut:
+    def __init__(self, filename, model):
+        self.filename = filename
+        self.model = model
 
+    def save(self):
+        of = open(self.filename, "w")
+        for lumi in self.model.lumis:
+            if lumi.errorMessage is None:
+                of.write("<img src={0}>\n".format(lumi.processedImageFileName))
+                of.write(str(lumi.measurements))
+        of.close()
 
+if __name__=="__main__":
+    dirs = glob.glob("/Users/Joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/*")
+    dirs = filter(lambda x: os.path.exists(x + "/ClickInfo.txt"), dirs)
 
+    dirs = dirs[0:5]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    outDir = "temp"
+    if os.path.exists(outDir):
+        shutil.rmtree(outDir)
+    os.mkdir(outDir)
+    lm = LuminescentModel(dirs, outDir)
+    out = HTMLOut("index.html", lm)
+    lm.process()
+    out.save()
