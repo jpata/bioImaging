@@ -341,6 +341,12 @@ class bioImage:
 
         measurements = sorted(measurements, key=lambda x: x.total, reverse=True)
         self.measurements = measurements
+
+        #show raw images
+        plt.imshow(self.arr)
+        plt.savefig(outfn)
+        plt.clf()
+
         return measurements
 
         # #Remove small components from mask
