@@ -1,4 +1,5 @@
 import sys
+import subprocess
 from PIL import Image
 import numpy
 import logging
@@ -57,7 +58,7 @@ class ImageStats:
 class Calibration:
     def __init__(self, ccdCalib):
         self.ccdCountsToRadiance = ccdCalib
-        self.totalC = (4*math.pi) * (12.5**2) / 65536.0
+        self.totalC = (4*math.pi) * (12.5**2) / float(256*256)
 
     def encode(self):
         return {"ccdCountsToRadiance": self.ccdCountsToRadiance}
@@ -96,38 +97,37 @@ class Measurement:
         return j
 
 class bioImage:
-
-    def saveToFile(self, fn):
-        logger = logging.getLogger(self.logger().name + ":saveToFile()")
-
-        logger.info("Saving data to file {0}".format(fn))
-        s = json.dumps(self, cls=Encoder, sort_keys=True, indent=4)
-        logger.debug("Encoded to JSON as {0}".format(s))
-        f = open(fn, "w")
-        f.write(s)
-        f.close()
-        return
-
-    def saveImage(self, fn):
-        logger = logging.getLogger(self.logger().name + ":saveImage()")
-        logger.info("Saving image to file {0}".format(fn))
-        img = Image.fromarray(self.arr)
-        img.save(fn, "TIFF")
-        return
-
-    def encode(self):
-        out = dict()
-        out["name"] = self.name
-        out["stats"] = self.stats
-        out["binning"] = self.binning
-        out["biasSubtracted"] = self.biasSubtracted
-        out["radianceCalibrated"] = self.radianceCalibrated
-        if hasattr(self, "biasMean"):
-            out["biasMean"] = self.biasMean
-        if hasattr(self, "measurements"):
-            out["measurements"] = self.measurements
-
-        return out
+    # def saveToFile(self, fn):
+    #     logger = logging.getLogger(self.logger().name + ":saveToFile()")
+    # 
+    #     logger.info("Saving data to file {0}".format(fn))
+    #     s = json.dumps(self, cls=Encoder, sort_keys=True, indent=4)
+    #     logger.debug("Encoded to JSON as {0}".format(s))
+    #     f = open(fn, "w")
+    #     f.write(s)
+    #     f.close()
+    #     return
+    # 
+    # def saveImage(self, fn):
+    #     logger = logging.getLogger(self.logger().name + ":saveImage()")
+    #     logger.info("Saving image to file {0}".format(fn))
+    #     img = Image.fromarray(self.arr)
+    #     img.save(fn, "TIFF")
+    #     return
+    # 
+    # def encode(self):
+    #     out = dict()
+    #     out["name"] = self.name
+    #     out["stats"] = self.stats
+    #     out["binning"] = self.binning
+    #     out["biasSubtracted"] = self.biasSubtracted
+    #     out["radianceCalibrated"] = self.radianceCalibrated
+    #     if hasattr(self, "biasMean"):
+    #         out["biasMean"] = self.biasMean
+    #     if hasattr(self, "measurements"):
+    #         out["measurements"] = self.measurements
+    # 
+    #     return out
 
     def calibrate(self, calibration):
         logger = logging.getLogger(self.logger().name + ":calibrate()")
@@ -164,6 +164,75 @@ class bioImage:
 
     def printStats(self):
         self.stats.printStats(self.logger())
+
+    def writePixels(self, jetR, bgR):
+        sz = self.arr.shape
+        m = self.arr.min()
+        #self.rebin(8)
+        of = open("pixels.dat", "w")
+        of.write("{0} {1}\n".format(jetR, bgR))
+        pxarray = []
+        for i in range(sz[0]):
+            for j in range(sz[1]):
+                e = self.arr[i,j]# - m
+                phi = math.pi/4 + math.pi/4 * (float(j)/float(sz[1]))
+                theta = math.pi/4 + math.pi/8 * (float(i)/float(sz[0]))
+                px = e * math.cos(phi) * math.sin(theta)
+                py = e * math.sin(phi) * math.sin(theta)
+                pz = e * math.cos(theta)
+                if (e>5):
+                    pxarray += [(px, py, pz, e)]
+                    of.write("{0} {1} {2} {3}\n".format(px, py, pz, e))
+
+        of.close()
+        return pxarray
+
+    def runJets(self, jetR, bgR):
+        self.writePixels(jetR, bgR)
+        r = subprocess.check_output("cat pixels.dat | /Users/joosep/Documents/fastjet-test", shell=True)
+        jets, cjets = self.parse_jets(r)
+
+        measurements = []
+        for i in range(len(jets)):
+            m = Measurement(jets[i][2], len(cjets[i]), 0.0, 0.0, 0.0, (jets[i][1], jets[i][0]))
+            measurements.append(m)
+        measurements = sorted(measurements, key=lambda x: x.total, reverse=True)
+        mu = numpy.mean([m.total for m in measurements])
+        st = numpy.std([m.total for m in measurements])
+        measurements = filter(lambda x: x.total > mu - 3*st, measurements)
+        return measurements
+
+    def to_cart(self, l):
+        px, py, pz, e = map(float, l)
+        pt = math.sqrt(px**2 + py**2)
+        sz = self.arr.shape
+        if pt>0 and e>0:
+            phi = math.acos(px / pt)# + math.pi/2
+            theta = math.acos(pz / e) #+ math.pi
+            x = (phi-math.pi/4)/(math.pi/4) * sz[0]
+            y = (theta-math.pi/4)/(math.pi/8) * sz[1]
+            return x, y, e
+        else:
+            return 0,0,0
+
+    def parse_jets(self, r):
+        jets= []
+        cjets = {}
+        jetidx = -1
+        for l in r.split("\n"):
+            if l.startswith("#"):
+                continue
+            if l.startswith("j "):
+                jetidx += 1
+                jet = self.to_cart(l.split()[1:5])
+                jets += [jet]
+                cjets[jetidx] = []
+            elif l.startswith("cj "):
+                cjet = self.to_cart(l.split()[1:5])
+                cjets[jetidx] += [cjet]
+        return jets, cjets
+
+
 
     def subtractBias(self, biasimg, useMean=False, doPad=False):
         logger = logging.getLogger(self.logger().name + ":subtractBias()")
@@ -270,52 +339,58 @@ class bioImage:
             m = Measurement(totals[i], sizes[i], means[i], maximums[i], stddevs[i], positions[i])
             measurements.append(m)
 
-        #Remove small components from mask
-        large = map(lambda x: x.area>self.binning*self.binning*100, measurements)
-        largeIndex = zip(range(1,len(large)+1), large)
-        for (n, isLarge) in largeIndex:
-            if not isLarge:
-                self.binArr[labels==n] = False
-
-        #Remove small components from measurements
-        filtered_measurements = []
-        for i in range(len(large)):
-            if large[i]:
-                filtered_measurements.append(measurements[i])
-        measurements = filtered_measurements
-
-        measurements = measurements[0:maxROIs]
-
-        measurements_sorted = sorted(measurements, key=lambda m: m.pos[1])
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        #pdb.set_trace()
-
-        plt.imshow(numpy.log(self.arr), cmap=matplotlib.cm.gnuplot2_r)
-        plt.contour(self.binArr, colors="black", alpha=0.9)
-        i = 1
-        for m in measurements:
-            r = math.sqrt(m.area/math.pi)*4
-            m.label = i
-            m.total = self.calibration.totalC * m.total
-            ax.text(m.pos[1], m.pos[0]+r, "%d\n%.2E\n%.2E\n%.2E" % (i, m.total, m.mean, m.area), alpha=0.9, color="black")
-            i += 1
-        if not outfn is None:
-            fig.savefig(outfn)
-
-        #self.analyzedFigure = fig
-        #plt.show()
-        plt.close()
-        fig.clf()
-        del ax
-        del fig
-        gc.collect()
-
-        #del fig
-
+        measurements = sorted(measurements, key=lambda x: x.total, reverse=True)
         self.measurements = measurements
         return measurements
+
+        # #Remove small components from mask
+        # large = map(lambda x: x.area>self.binning*self.binning*100, measurements)
+        # largeIndex = zip(range(1,len(large)+1), large)
+        # for (n, isLarge) in largeIndex:
+        #     if not isLarge:
+        #         self.binArr[labels==n] = False
+
+        # #Remove small components from measurements
+        # filtered_measurements = []
+        # for i in range(len(large)):
+        #     if large[i]:
+        #         filtered_measurements.append(measurements[i])
+        # measurements = filtered_measurements
+
+        # measurements = measurements[0:maxROIs]
+
+        # measurements_sorted = sorted(measurements, key=lambda m: m.pos[1])
+
+    def plot_measurements(self, fig, ax, measurements):
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111)
+        #pdb.set_trace()
+
+        plt.imshow(numpy.log(self.arr), cmap="YlOrRd")
+        #plt.contour(self.binArr, colors="black", alpha=1.0)
+        i = 1
+        for m in measurements:
+            #r = math.sqrt(m.area/math.pi)*4
+            r = m.area/10
+            m.label = i
+            m.total = self.calibration.totalC * m.total
+            ax.scatter([m.pos[1]], [m.pos[0]], [r], alpha=0.2)
+            ax.text(m.pos[1], m.pos[0], "{0}".format(i), alpha=1.0, color="black", fontsize=16)
+            i += 1
+        # print outfn
+        # if not outfn is None:
+        #     fig.savefig(outfn)
+
+        self.analyzedFigure = fig
+        #plt.show()
+        #plt.close()
+        #fig.clf()
+        #del ax
+        #del fig
+        #gc.collect()
+
+        #self.measurements = measurements
+        return
 
 
 def showArr(arr):
@@ -425,8 +500,6 @@ def main():
             sheet.write(0, dataBeginCol+j, m)
             j += 1
 
-
-
     for fn in files[0:maxFiles]:
         sys.stdout.write(".")
         sys.stdout.flush()
@@ -482,6 +555,7 @@ class Luminescent:
         self.name = d[d.rindex("/")+1:]
         self.readBiasImg = None
         self.lumiImg = None
+        self.photo = None
         self.outDir = outDir
         self.processedImageFileName = self.outDir + "/" + self.name + "_processed.png"
 
@@ -491,8 +565,10 @@ class Luminescent:
     def load(self):
         self.lumiImg = bioImage(self.ci.dir + "/" + self.ci.lumi.image)
         self.readBiasImg = bioImage(self.ci.dir + "/" + self.ci.readbias.image)
+        #self.photo = bioImage(self.ci.dir + "/" + self.ci.readbias.image)
 
     def analyze(self):
+        print "analyze", self
         nSigma = 0.3
         nDilations = 2
         maxROIs = 3
@@ -505,6 +581,7 @@ class Luminescent:
         c = Calibration(ccdCoef)
         c.totalC = c.totalC / (self.ci.lumi.binning**2)
         self.lumiImg.calibrate(c)
+        #self.lumiImg.writePixels()
         self.lumiImg.binarize(nSigma)
         self.lumiImg.dilate(it=self.ci.lumi.binning*nDilations)
         self.lumiImg.components(self.processedImageFileName, maxROIs)
@@ -513,9 +590,9 @@ class Luminescent:
         self.imgStats = self.lumiImg.stats
 
     def clean(self):
-        del self.lumiImg
-        del self.readBiasImg
-        gc.collect()
+        #del self.lumiImg
+        #del self.readBiasImg
+        #gc.collect()
         return
 
     def all(self):
@@ -526,15 +603,18 @@ class Luminescent:
             self.errorMessage = None
         except IOError as e:
             self.errorMessage = e.message
+            print e
         return
 
 class LuminescentModel:
     def __init__(self, dirs, outDir):
         self.outDir = outDir
         self.lumis = [Luminescent(d, self.outDir) for d in dirs]
+        print self.lumis
 
     def process(self):
         for l in self.lumis:
+            print l
             l.all()
 
 class HTMLOut:
@@ -548,6 +628,12 @@ class HTMLOut:
             if lumi.errorMessage is None:
                 of.write("<img src={0}>\n".format(lumi.processedImageFileName))
                 of.write(str(lumi.measurements))
+                fig = plt.figure()
+                ax = plt.axes()
+                print lumi
+                #import pdb
+                #pdb.set_trace()
+                lumi.lumiImg.plot_measurements(fig, ax, lumi.measurements)
         of.close()
 
 if __name__=="__main__":
@@ -555,6 +641,7 @@ if __name__=="__main__":
     dirs = filter(lambda x: os.path.exists(x + "/ClickInfo.txt"), dirs)
 
     dirs = dirs[0:5]
+    print dirs
 
     outDir = "temp"
     if os.path.exists(outDir):

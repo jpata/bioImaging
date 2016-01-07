@@ -100,6 +100,17 @@ class CameraBlock:
     def __repr__(self):
         return str(self.__dict__)
 
+class PhotoBlock:
+    def __init__(self, block):
+        spl = block.split("\n")
+        self.data = {}
+        for elem in spl:
+            print elem
+            k, v = elem.split(":\t")
+            self.data[k] = v.strip()
+        
+
+
 class UserInput:
     def __init__(self, block):
         try:
@@ -122,10 +133,11 @@ class UserInput:
     def __repr__(self):
         return str(self.__dict__)
 class ClickInfo:
-    def __init__(self, readbias, lumi, cam, dir):
+    def __init__(self, readbias, lumiBlock, camBlock, photoBlock, dir):
         self.readbias = readbias
-        self.lumi = lumi
-        self.cam = cam
+        self.lumi = lumiBlock
+        self.cam = camBlock
+        self.photoBlock = photoBlock
         self.dir = dir
 
 def readBlocks(fn):
@@ -144,7 +156,10 @@ def readClickInfo(dir):
     rbBlock = ReadBiasBlock(getBlock(blocks, "readbiasonly"))
     lumiBlock = LuminescentBlock(getBlock(blocks, "luminescent"))
     camBlock = CameraBlock(getBlock(blocks, "Camera System Info"))
-    return ClickInfo(rbBlock, lumiBlock, camBlock, dir)
+    photoBlock = PhotoBlock(getBlock(blocks, "photographic image"))
+    ci = ClickInfo(rbBlock, lumiBlock, camBlock, photoBlock, dir)
+    ci.blocks = blocks
+    return ci
 
 def readAnalyzedClickInfo(dir):
     blocks = readBlocks(dir+"/AnalyzedClickInfo.txt")
@@ -156,12 +171,13 @@ if __name__=="__main__":
 
     cis = []
     for fn in files:
+        print fn
         dir = fn[:fn.rindex("/")]
         ci = readClickInfo(dir)
+        print ci
         try:
             an = readAnalyzedClickInfo(dir)
+            print an
         except Exception as e:
             print "Could not get AnalyzedClickInfo for {1}: {0}".format(e.message, dir)
         cis.append(ci)
-
-
