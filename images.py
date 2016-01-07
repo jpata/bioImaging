@@ -643,7 +643,7 @@ class HTMLOut:
         of.close()
 
 if __name__=="__main__":
-    dirs = glob.glob("/Users/Joosep/Dropbox/hiired/luminestsents/Joosepile luminestsents/mGli2R 20dets2012/*")
+    dirs = glob.glob("/home/lex/Dropbox/bioImaging-collab/testdata/lumi/*")
     dirs = filter(lambda x: os.path.exists(x + "/ClickInfo.txt"), dirs)
 
     dirs = dirs[0:5]
